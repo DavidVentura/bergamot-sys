@@ -8,6 +8,9 @@ threads = []
 
 [dependencies]
 
+[build-dependencies]
+cmake = "0.1"
+
 [[bin]]
 name = "bergamot-example"
 path = "src/main.rs"

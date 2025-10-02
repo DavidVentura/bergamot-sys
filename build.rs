@@ -1,71 +1,65 @@
+use cmake;
 use std::env;
-use std::path::PathBuf;
-use std::process::Command;
 
 fn main() {
-    let manifest_dir = PathBuf::from(env::var("CARGO_MANIFEST_DIR").unwrap());
-    let build_dir = manifest_dir.join("target").join("bergamot-build");
-
-    let cache_file = build_dir.join("CMakeCache.txt");
-    if cache_file.exists() {
-        if let Ok(cache_content) = std::fs::read_to_string(&cache_file) {
-            let expected_source = format!("CMAKE_HOME_DIRECTORY:INTERNAL={}", manifest_dir.display());
-            if !cache_content.contains(&expected_source) {
-                let _ = std::fs::remove_dir_all(&build_dir);
-            }
-        }
-    }
-
-    std::fs::create_dir_all(&build_dir).expect("Failed to create build directory");
-
     println!("cargo:rerun-if-changed=src/bergamot_wrapper.cpp");
     println!("cargo:rerun-if-changed=CMakeLists.txt");
     println!("cargo:rerun-if-changed=build.rs");
 
     let use_threads = env::var("CARGO_FEATURE_THREADS").is_ok();
 
-    let mut cmake_config = Command::new("cmake");
-    cmake_config
-        .current_dir(&build_dir)
-        .arg(&manifest_dir)
-        .arg("-DCMAKE_BUILD_TYPE=Release")
-        .arg(format!("-DUSE_THREADS={}", if use_threads { "ON" } else { "OFF" }));
+    let dst = cmake::Config::new(".")
+        .define("CMAKE_BUILD_TYPE", "Release")
+        .define("COMPILE_WASM", "OFF")
+        .define("COMPILE_TESTS", "OFF")
+        .define("COMPILE_UNIT_TESTS", "OFF")
+        .define("COMPILE_LIBRARY_ONLY", "ON")
+        .define("USE_STATIC_LIBS", "ON")
+        .define("USE_SENTENCEPIECE", "ON")
+        .define("USE_MKL", "OFF")
+        .define("ENABLE_CACHE_STATS", "OFF")
+        .define("SSPLIT_COMPILE_LIBRARY_ONLY", "ON")
+        .define("SSPLIT_USE_INTERNAL_PCRE2", "ON")
+        .define("USE_RUY", "ON")
+        .define("USE_RUY_SGEMM", "ON")
+        .define("INTGEMM_DONT_BUILD_TESTS", "ON")
+        .define("USE_THREADS", if use_threads { "ON" } else { "OFF" })
+        .build();
 
-    let status = cmake_config.status().expect("Failed to run cmake configure");
-    if !status.success() {
-        panic!("CMake configuration failed");
-    }
-
-    let num_jobs = env::var("NUM_JOBS")
-        .ok()
-        .and_then(|s| s.parse::<usize>().ok())
-        .unwrap_or_else(|| std::thread::available_parallelism().map(|n| n.get()).unwrap_or(1));
-
-    let mut cmake_build = Command::new("cmake");
-    cmake_build
-        .current_dir(&build_dir)
-        .arg("--build")
-        .arg(".")
-        .arg("--config")
-        .arg("Release")
-        .arg("--parallel")
-        .arg(num_jobs.to_string());
-
-    let status = cmake_build.status().expect("Failed to run cmake build");
-    if !status.success() {
-        panic!("CMake build failed");
-    }
-
+    // Add all necessary library search paths
+    let build_dir = dst.join("build");
     println!("cargo:rustc-link-search=native={}", build_dir.display());
-    println!("cargo:rustc-link-search=native={}/bergamot-translator/src/translator", build_dir.display());
-    println!("cargo:rustc-link-search=native={}/bergamot-translator/3rd_party/marian-dev/src/3rd_party/intgemm", build_dir.display());
-    println!("cargo:rustc-link-search=native={}/bergamot-translator/3rd_party/marian-dev/src/3rd_party/sentencepiece/src", build_dir.display());
-    println!("cargo:rustc-link-search=native={}/bergamot-translator/3rd_party/marian-dev/src/3rd_party/ruy/ruy", build_dir.display());
-    println!("cargo:rustc-link-search=native={}/bergamot-translator/3rd_party/marian-dev/src/3rd_party/ruy/ruy/profiler", build_dir.display());
-    println!("cargo:rustc-link-search=native={}/bergamot-translator/3rd_party/marian-dev/src/3rd_party/ruy/third_party/cpuinfo", build_dir.display());
-    println!("cargo:rustc-link-search=native={}/bergamot-translator/3rd_party/marian-dev/src/3rd_party/ruy/third_party/cpuinfo/deps/clog", build_dir.display());
+    println!(
+        "cargo:rustc-link-search=native={}/bergamot-translator/src/translator",
+        build_dir.display()
+    );
+    println!(
+        "cargo:rustc-link-search=native={}/bergamot-translator/3rd_party/marian-dev/src/3rd_party/intgemm",
+        build_dir.display()
+    );
+    println!(
+        "cargo:rustc-link-search=native={}/bergamot-translator/3rd_party/marian-dev/src/3rd_party/sentencepiece/src",
+        build_dir.display()
+    );
+    println!(
+        "cargo:rustc-link-search=native={}/bergamot-translator/3rd_party/marian-dev/src/3rd_party/ruy/ruy",
+        build_dir.display()
+    );
+    println!(
+        "cargo:rustc-link-search=native={}/bergamot-translator/3rd_party/marian-dev/src/3rd_party/ruy/ruy/profiler",
+        build_dir.display()
+    );
+    println!(
+        "cargo:rustc-link-search=native={}/bergamot-translator/3rd_party/marian-dev/src/3rd_party/ruy/third_party/cpuinfo",
+        build_dir.display()
+    );
+    println!(
+        "cargo:rustc-link-search=native={}/bergamot-translator/3rd_party/marian-dev/src/3rd_party/ruy/third_party/cpuinfo/deps/clog",
+        build_dir.display()
+    );
     println!("cargo:rustc-link-search=native={}/lib", build_dir.display());
 
+    // Link all static libraries (cmake crate doesn't handle transitive dependencies)
     println!("cargo:rustc-link-lib=static=bergamot_wrapper");
     println!("cargo:rustc-link-lib=static=bergamot-translator");
     println!("cargo:rustc-link-lib=static=marian");
