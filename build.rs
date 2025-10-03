@@ -2,13 +2,13 @@ use cmake;
 use std::env;
 
 fn main() {
-    println!("cargo:rerun-if-changed=src/bergamot_wrapper.cpp");
-    println!("cargo:rerun-if-changed=CMakeLists.txt");
+    println!("cargo:rerun-if-changed=bindings/bergamot_wrapper.cpp");
+    println!("cargo:rerun-if-changed=bindings/CMakeLists.txt");
     println!("cargo:rerun-if-changed=build.rs");
 
     let use_threads = env::var("CARGO_FEATURE_THREADS").is_ok();
 
-    let dst = cmake::Config::new(".")
+    let dst = cmake::Config::new("bindings")
         .define("CMAKE_BUILD_TYPE", "Release")
         .define("COMPILE_WASM", "OFF")
         .define("COMPILE_TESTS", "OFF")

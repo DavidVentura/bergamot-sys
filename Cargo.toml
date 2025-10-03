@@ -11,6 +11,13 @@ threads = []
 [build-dependencies]
 cmake = "0.1"
 
+[lib]
+name = "bergamot_sys"
+path = "src/lib.rs"
+
 [[bin]]
-name = "bergamot-example"
-path = "src/main.rs"
+name = "bergamot"
+path = "src/bin/bergamot.rs"
+
+[profile.release]
+lto = "fat"

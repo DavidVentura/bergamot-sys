@@ -24,8 +24,8 @@ if(NOT DEFINED USE_THREADS)
     set(USE_THREADS OFF CACHE BOOL "" FORCE)
 endif()
 
-add_subdirectory(bergamot-translator)
+add_subdirectory(../bergamot-translator bergamot-translator)
 
-add_library(bergamot_wrapper STATIC src/bergamot_wrapper.cpp)
+add_library(bergamot_wrapper STATIC bergamot_wrapper.cpp)
 
 target_link_libraries(bergamot_wrapper PRIVATE bergamot-translator)
