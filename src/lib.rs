@@ -61,7 +61,7 @@ impl BlockingService {
         Self { ptr }
     }
 
-    pub fn translate(&self, model: &TranslationModel, inputs: Vec<String>) -> Vec<String> {
+    pub fn translate(&self, model: &TranslationModel, inputs: &[String]) -> Vec<String> {
         let c_inputs: Vec<CString> = inputs
             .iter()
             .map(|s| CString::new(s.as_str()).expect("Failed to create CString"))

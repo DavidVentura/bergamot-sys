@@ -47,7 +47,7 @@ fn main() {
 
     println!("Translating 'hello'...");
     let inputs = vec!["hello".to_string()];
-    let results = service.translate(&model, inputs);
+    let results = service.translate(&model, &inputs);
 
     println!("Translation result:");
     for result in results {
