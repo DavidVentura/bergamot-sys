@@ -46,8 +46,8 @@ fn main() {
     let model = TranslationModel::from_config(&config).expect("Failed to load model");
 
     println!("Translating 'hello'...");
-    let inputs = vec!["hello".to_string()];
-    let results = service.translate(&model, &inputs);
+    let inputs = vec!["hello"];
+    let results = service.translate(&model, inputs.as_slice());
 
     println!("Translation result:");
     for result in results {

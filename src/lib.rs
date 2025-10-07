@@ -61,10 +61,11 @@ impl BlockingService {
         Self { ptr }
     }
 
-    pub fn translate(&self, model: &TranslationModel, inputs: &[String]) -> Vec<String> {
+    pub fn translate(&self, model: &TranslationModel, inputs: &[&str]) -> Vec<String> {
         let c_inputs: Vec<CString> = inputs
             .iter()
-            .map(|s| CString::new(s.as_str()).expect("Failed to create CString"))
+            .cloned()
+            .map(|s| CString::new(s).expect("Failed to create CString"))
             .collect();
 
         let c_input_ptrs: Vec<*const c_char> = c_inputs.iter().map(|s| s.as_ptr()).collect();
@@ -90,11 +91,12 @@ impl BlockingService {
         &self,
         first_model: &TranslationModel,
         second_model: &TranslationModel,
-        inputs: Vec<String>,
+        inputs: &[&str],
     ) -> Vec<String> {
         let c_inputs: Vec<CString> = inputs
             .iter()
-            .map(|s| CString::new(s.as_str()).expect("Failed to create CString"))
+            .cloned()
+            .map(|s| CString::new(s).expect("Failed to create CString"))
             .collect();
 
         let c_input_ptrs: Vec<*const c_char> = c_inputs.iter().map(|s| s.as_ptr()).collect();
