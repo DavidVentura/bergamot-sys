@@ -28,7 +28,7 @@ extern "C" {
         return new TranslationModel(options);
     }
 
-    void bergamot_model_delete(void* model_ptr) {
+    void __attribute__ ((visibility ("default"))) bergamot_model_delete(void* model_ptr) {
         delete static_cast<TranslationModel*>(model_ptr);
     }
 
