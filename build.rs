@@ -7,8 +7,18 @@ fn main() {
     println!("cargo:rerun-if-changed=build.rs");
 
     let use_threads = env::var("CARGO_FEATURE_THREADS").is_ok();
+    let target_arch = env::var("CARGO_CFG_TARGET_ARCH").unwrap();
+    let target = env::var("TARGET").unwrap();
+    let host = env::var("HOST").unwrap();
 
-    let dst = cmake::Config::new("bindings")
+    let build_arch = match target_arch.as_str() {
+        "aarch64" => "armv8-a",
+        "arm" => "armv7-a",
+        _ => "native",
+    };
+
+    let mut config = cmake::Config::new("bindings");
+    config
         .define("CMAKE_BUILD_TYPE", "Release")
         .define("COMPILE_WASM", "OFF")
         .define("COMPILE_TESTS", "OFF")
@@ -24,7 +34,36 @@ fn main() {
         .define("USE_RUY_SGEMM", "ON")
         .define("INTGEMM_DONT_BUILD_TESTS", "ON")
         .define("USE_THREADS", if use_threads { "ON" } else { "OFF" })
-        .build();
+        .define("BUILD_ARCH", build_arch);
+
+    if target != host {
+        let cmake_system_processor = match target_arch.as_str() {
+            "x86_64" => "x86_64",
+            "x86" => "i686",
+            "aarch64" => "aarch64",
+            "arm" => "armv7",
+            _ => &target_arch,
+        };
+
+        let cmake_c_compiler = match target_arch.as_str() {
+            "aarch64" => "aarch64-linux-gnu-gcc",
+            "arm" => "arm-linux-gnueabihf-gcc",
+            _ => "gcc",
+        };
+
+        let cmake_cxx_compiler = match target_arch.as_str() {
+            "aarch64" => "aarch64-linux-gnu-g++",
+            "arm" => "arm-linux-gnueabihf-g++",
+            _ => "g++",
+        };
+
+        config.define("CMAKE_SYSTEM_NAME", "Linux");
+        config.define("CMAKE_SYSTEM_PROCESSOR", cmake_system_processor);
+        config.define("CMAKE_C_COMPILER", cmake_c_compiler);
+        config.define("CMAKE_CXX_COMPILER", cmake_cxx_compiler);
+    }
+
+    let dst = config.build();
 
     // Add all necessary library search paths
     let build_dir = dst.join("build");
@@ -65,7 +104,12 @@ fn main() {
     println!("cargo:rustc-link-lib=static=marian");
     println!("cargo:rustc-link-lib=static=sentencepiece");
     println!("cargo:rustc-link-lib=static=sentencepiece_train");
-    println!("cargo:rustc-link-lib=static=intgemm");
+
+    // intgemm is x86-only, ARM uses RUY instead
+    if target_arch == "x86_64" || target_arch == "x86" {
+        println!("cargo:rustc-link-lib=static=intgemm");
+    }
+
     println!("cargo:rustc-link-lib=static=ssplit");
     println!("cargo:rustc-link-lib=static=pcre2-8");
 
@@ -88,20 +132,26 @@ fn main() {
     println!("cargo:rustc-link-lib=static=ruy_prepacked_cache");
     println!("cargo:rustc-link-lib=static=ruy_apply_multiplier");
     println!("cargo:rustc-link-lib=static=ruy_profiler_instrumentation");
-    println!("cargo:rustc-link-lib=static=ruy_have_built_path_for_avx");
-    println!("cargo:rustc-link-lib=static=ruy_have_built_path_for_avx2_fma");
-    println!("cargo:rustc-link-lib=static=ruy_have_built_path_for_avx512");
-    println!("cargo:rustc-link-lib=static=ruy_kernel_avx");
-    println!("cargo:rustc-link-lib=static=ruy_kernel_avx2_fma");
-    println!("cargo:rustc-link-lib=static=ruy_kernel_avx512");
-    println!("cargo:rustc-link-lib=static=ruy_pack_avx");
-    println!("cargo:rustc-link-lib=static=ruy_pack_avx2_fma");
-    println!("cargo:rustc-link-lib=static=ruy_pack_avx512");
+
+    if target_arch == "x86_64" || target_arch == "x86" {
+        println!("cargo:rustc-link-lib=static=ruy_have_built_path_for_avx");
+        println!("cargo:rustc-link-lib=static=ruy_have_built_path_for_avx2_fma");
+        println!("cargo:rustc-link-lib=static=ruy_have_built_path_for_avx512");
+        println!("cargo:rustc-link-lib=static=ruy_kernel_avx");
+        println!("cargo:rustc-link-lib=static=ruy_kernel_avx2_fma");
+        println!("cargo:rustc-link-lib=static=ruy_kernel_avx512");
+        println!("cargo:rustc-link-lib=static=ruy_pack_avx");
+        println!("cargo:rustc-link-lib=static=ruy_pack_avx2_fma");
+        println!("cargo:rustc-link-lib=static=ruy_pack_avx512");
+    } else if target_arch == "aarch64" || target_arch == "arm" {
+        println!("cargo:rustc-link-lib=static=ruy_kernel_arm");
+        println!("cargo:rustc-link-lib=static=ruy_pack_arm");
+    }
+
     println!("cargo:rustc-link-lib=static=cpuinfo");
     println!("cargo:rustc-link-lib=static=clog");
 
     println!("cargo:rustc-link-lib=stdc++");
-
     if use_threads {
         println!("cargo:rustc-link-lib=pthread");
     }
