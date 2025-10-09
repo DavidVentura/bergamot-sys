@@ -1,3 +1,3 @@
 [submodule "bergamot-translator"]
 	path = bergamot-translator
-	url = git@github.com:DavidVentura/bergamot-translator.git
+	url = https://github.com/DavidVentura/bergamot-translator.git
