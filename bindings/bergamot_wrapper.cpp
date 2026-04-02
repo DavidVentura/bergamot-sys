@@ -190,6 +190,54 @@ extern "C" {
         return results;
     }
 
+    CTranslationWithAlignment* bergamot_service_pivot_with_alignment(
+            void* service_ptr, void* first_model_ptr, void* second_model_ptr, const char** inputs, size_t count) {
+        auto* service = static_cast<BlockingService*>(service_ptr);
+        auto* first_model = static_cast<TranslationModel*>(first_model_ptr);
+        auto* second_model = static_cast<TranslationModel*>(second_model_ptr);
+
+        std::vector<std::string> cpp_inputs;
+        cpp_inputs.reserve(count);
+        for (size_t i = 0; i < count; ++i) {
+            cpp_inputs.emplace_back(inputs[i]);
+        }
+
+        std::vector<ResponseOptions> responseOptions;
+        responseOptions.reserve(count);
+        for (size_t i = 0; i < count; ++i) {
+            ResponseOptions opts;
+            opts.HTML = false;
+            opts.qualityScores = false;
+            opts.alignment = true;
+            opts.sentenceMappings = false;
+            responseOptions.emplace_back(opts);
+        }
+
+        std::shared_ptr<TranslationModel> first_shared(first_model, [](TranslationModel*){});
+        std::shared_ptr<TranslationModel> second_shared(second_model, [](TranslationModel*){});
+        std::vector<Response> responses = service->pivotMultiple(first_shared, second_shared, std::move(cpp_inputs), responseOptions);
+
+        CTranslationWithAlignment* results = new CTranslationWithAlignment[count];
+
+        for (size_t i = 0; i < responses.size(); ++i) {
+            const auto& resp = responses[i];
+
+            results[i].source = new char[resp.source.text.length() + 1];
+            strcpy(results[i].source, resp.source.text.c_str());
+            results[i].target = new char[resp.target.text.length() + 1];
+            strcpy(results[i].target, resp.target.text.c_str());
+
+            std::vector<CTokenAlignment> alignments;
+            extractAlignments(resp, alignments);
+
+            results[i].alignment_count = alignments.size();
+            results[i].alignments = new CTokenAlignment[alignments.size()];
+            memcpy(results[i].alignments, alignments.data(), alignments.size() * sizeof(CTokenAlignment));
+        }
+
+        return results;
+    }
+
     void bergamot_free_translations_with_alignment(CTranslationWithAlignment* results, size_t count) {
         for (size_t i = 0; i < count; ++i) {
             delete[] results[i].source;
