@@ -1,5 +1,30 @@
 use cmake;
+use std::fs;
 use std::env;
+use std::path::PathBuf;
+
+fn latest_android_ndk_from_sdk() -> Option<PathBuf> {
+    let sdk_root = env::var_os("ANDROID_SDK_ROOT")
+        .or_else(|| env::var_os("ANDROID_HOME"))
+        .map(PathBuf::from)?;
+    let ndk_root = sdk_root.join("ndk");
+    let mut entries = fs::read_dir(ndk_root)
+        .ok()?
+        .filter_map(Result::ok)
+        .filter(|entry| entry.file_type().map(|kind| kind.is_dir()).unwrap_or(false))
+        .map(|entry| entry.path())
+        .collect::<Vec<_>>();
+    entries.sort();
+    entries.pop()
+}
+
+fn android_ndk_root() -> Option<PathBuf> {
+    env::var_os("ANDROID_NDK_ROOT")
+        .or_else(|| env::var_os("ANDROID_NDK_HOME"))
+        .or_else(|| env::var_os("ANDROID_NDK"))
+        .map(PathBuf::from)
+        .or_else(latest_android_ndk_from_sdk)
+}
 
 fn main() {
     println!("cargo:rerun-if-changed=bindings/bergamot_wrapper.cpp");
@@ -8,8 +33,10 @@ fn main() {
 
     let use_threads = env::var("CARGO_FEATURE_THREADS").is_ok();
     let target_arch = env::var("CARGO_CFG_TARGET_ARCH").unwrap();
+    let target_os = env::var("CARGO_CFG_TARGET_OS").unwrap();
     let target = env::var("TARGET").unwrap();
     let host = env::var("HOST").unwrap();
+    let is_android = target_os == "android";
 
     let build_arch = match target_arch.as_str() {
         "aarch64" => "armv8-a",
@@ -36,7 +63,38 @@ fn main() {
         .define("USE_THREADS", if use_threads { "ON" } else { "OFF" })
         .define("BUILD_ARCH", build_arch);
 
-    if target != host {
+    if is_android {
+        let android_abi = match target_arch.as_str() {
+            "aarch64" => "arm64-v8a",
+            "arm" => "armeabi-v7a",
+            "x86_64" => "x86_64",
+            "x86" => "x86",
+            _ => panic!("Unsupported Android target arch: {target_arch}"),
+        };
+        let android_platform = env::var("CARGO_NDK_PLATFORM")
+            .ok()
+            .filter(|value| value.chars().all(|ch| ch.is_ascii_digit()))
+            .or_else(|| {
+                env::var("ANDROID_PLATFORM")
+                    .ok()
+                    .and_then(|value| value.strip_prefix("android-").map(str::to_string))
+                    .filter(|value| value.chars().all(|ch| ch.is_ascii_digit()))
+            })
+            .unwrap_or_else(|| "21".to_string());
+        let ndk_root =
+            android_ndk_root().expect("Android target requires ANDROID_NDK_ROOT or ANDROID_SDK_ROOT");
+
+        config
+            .generator("Ninja")
+            .define(
+                "CMAKE_TOOLCHAIN_FILE",
+                ndk_root.join("build/cmake/android.toolchain.cmake"),
+            )
+            .define("ANDROID_ABI", android_abi)
+            .define("ANDROID_PLATFORM", format!("android-{android_platform}"));
+    }
+
+    if target != host && !is_android {
         let cmake_system_processor = match target_arch.as_str() {
             "x86_64" => "x86_64",
             "x86" => "i686",
@@ -151,8 +209,12 @@ fn main() {
     println!("cargo:rustc-link-lib=static=cpuinfo");
     println!("cargo:rustc-link-lib=static=clog");
 
-    println!("cargo:rustc-link-lib=stdc++");
-    if use_threads {
+    if is_android {
+        println!("cargo:rustc-link-lib=c++_shared");
+    } else {
+        println!("cargo:rustc-link-lib=stdc++");
+    }
+    if use_threads && !is_android {
         println!("cargo:rustc-link-lib=pthread");
     }
 }
