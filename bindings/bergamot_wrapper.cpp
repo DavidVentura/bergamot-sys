@@ -47,7 +47,7 @@ extern "C" {
         delete static_cast<TranslationModel*>(model_ptr);
     }
 
-    char** bergamot_service_translate(void* service_ptr, void* model_ptr, const char** inputs, size_t count) {
+    char** bergamot_service_translate(void* service_ptr, void* model_ptr, const char** inputs, size_t count, bool html) {
         auto* service = static_cast<BlockingService*>(service_ptr);
         auto* model = static_cast<TranslationModel*>(model_ptr);
 
@@ -61,7 +61,7 @@ extern "C" {
         responseOptions.reserve(count);
         for (size_t i = 0; i < count; ++i) {
             ResponseOptions opts;
-            opts.HTML = false;
+            opts.HTML = html;
             opts.qualityScores = false;
             opts.alignment = false;
             opts.sentenceMappings = false;
@@ -81,7 +81,7 @@ extern "C" {
         return output;
     }
 
-    char** bergamot_service_pivot(void* service_ptr, void* first_model_ptr, void* second_model_ptr, const char** inputs, size_t count) {
+    char** bergamot_service_pivot(void* service_ptr, void* first_model_ptr, void* second_model_ptr, const char** inputs, size_t count, bool html) {
         auto* service = static_cast<BlockingService*>(service_ptr);
         auto* first_model = static_cast<TranslationModel*>(first_model_ptr);
         auto* second_model = static_cast<TranslationModel*>(second_model_ptr);
@@ -96,7 +96,7 @@ extern "C" {
         responseOptions.reserve(count);
         for (size_t i = 0; i < count; ++i) {
             ResponseOptions opts;
-            opts.HTML = false;
+            opts.HTML = html;
             opts.qualityScores = false;
             opts.alignment = false;
             opts.sentenceMappings = false;

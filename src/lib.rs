@@ -34,6 +34,7 @@ unsafe extern "C" {
         model_ptr: *mut c_void,
         inputs: *const *const c_char,
         count: usize,
+        html: bool,
     ) -> *mut *mut c_char;
     fn bergamot_service_translate_with_alignment(
         service_ptr: *mut c_void,
@@ -47,6 +48,7 @@ unsafe extern "C" {
         second_model_ptr: *mut c_void,
         inputs: *const *const c_char,
         count: usize,
+        html: bool,
     ) -> *mut *mut c_char;
     fn bergamot_service_pivot_with_alignment(
         service_ptr: *mut c_void,
@@ -123,7 +125,7 @@ impl BlockingService {
         Self { ptr }
     }
 
-    pub fn translate(&self, model: &TranslationModel, inputs: &[&str]) -> Vec<String> {
+    pub fn translate(&self, model: &TranslationModel, inputs: &[&str], html: bool) -> Vec<String> {
         let c_inputs: Vec<CString> = inputs
             .iter()
             .cloned()
@@ -135,7 +137,7 @@ impl BlockingService {
 
         unsafe {
             let result_ptr =
-                bergamot_service_translate(self.ptr, model.ptr, c_input_ptrs.as_ptr(), count);
+                bergamot_service_translate(self.ptr, model.ptr, c_input_ptrs.as_ptr(), count, html);
             assert!(!result_ptr.is_null(), "Translation failed");
 
             let mut results = Vec::new();
@@ -215,6 +217,7 @@ impl BlockingService {
         first_model: &TranslationModel,
         second_model: &TranslationModel,
         inputs: &[&str],
+        html: bool,
     ) -> Vec<String> {
         let c_inputs: Vec<CString> = inputs
             .iter()
@@ -232,6 +235,7 @@ impl BlockingService {
                 second_model.ptr,
                 c_input_ptrs.as_ptr(),
                 count,
+                html,
             );
             assert!(!result_ptr.is_null(), "Pivot translation failed");
 
