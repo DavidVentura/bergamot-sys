@@ -41,6 +41,8 @@ fn main() {
     let build_arch = match target_arch.as_str() {
         "aarch64" => "armv8-a",
         "arm" => "armv7-a",
+        "x86_64" => "x86-64-v2",
+        "x86" => "i686",
         _ => "native",
     };
 
