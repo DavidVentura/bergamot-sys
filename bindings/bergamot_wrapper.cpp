@@ -2,6 +2,9 @@
 #include <vector>
 #include <memory>
 #include <algorithm>
+#include <condition_variable>
+#include <cstring>
+#include <mutex>
 #include "translator/parser.h"
 #include "translator/response.h"
 #include "translator/response_options.h"
@@ -23,16 +26,91 @@ struct CTranslationWithAlignment {
     size_t alignment_count;
 };
 
+static constexpr size_t ASYNC_WORKERS = 2;
+
+struct ResponseCollector {
+    explicit ResponseCollector(size_t count) : responses(count), remaining(count) {}
+
+    void complete(size_t index, Response&& response) {
+        std::lock_guard<std::mutex> lock(mutex);
+        responses[index] = std::move(response);
+        if (--remaining == 0) {
+            cv.notify_one();
+        }
+    }
+
+    std::vector<Response> wait() {
+        std::unique_lock<std::mutex> lock(mutex);
+        cv.wait(lock, [this] { return remaining == 0; });
+        return std::move(responses);
+    }
+
+    std::mutex mutex;
+    std::condition_variable cv;
+    std::vector<Response> responses;
+    size_t remaining;
+};
+
+static std::vector<Response> translate_async(
+        AsyncService* service,
+        TranslationModel* model,
+        std::vector<std::string>&& inputs,
+        const std::vector<ResponseOptions>& responseOptions) {
+    auto collector = std::make_shared<ResponseCollector>(inputs.size());
+    if (inputs.empty()) {
+        return collector->wait();
+    }
+
+    std::shared_ptr<TranslationModel> model_shared(model, [](TranslationModel*){});
+    for (size_t i = 0; i < inputs.size(); ++i) {
+        service->translate(
+            model_shared,
+            std::move(inputs[i]),
+            [collector, i](Response&& response) {
+                collector->complete(i, std::move(response));
+            },
+            responseOptions[i]);
+    }
+    return collector->wait();
+}
+
+static std::vector<Response> pivot_async(
+        AsyncService* service,
+        TranslationModel* first_model,
+        TranslationModel* second_model,
+        std::vector<std::string>&& inputs,
+        const std::vector<ResponseOptions>& responseOptions) {
+    auto collector = std::make_shared<ResponseCollector>(inputs.size());
+    if (inputs.empty()) {
+        return collector->wait();
+    }
+
+    std::shared_ptr<TranslationModel> first_shared(first_model, [](TranslationModel*){});
+    std::shared_ptr<TranslationModel> second_shared(second_model, [](TranslationModel*){});
+    for (size_t i = 0; i < inputs.size(); ++i) {
+        service->pivot(
+            first_shared,
+            second_shared,
+            std::move(inputs[i]),
+            [collector, i](Response&& response) {
+                collector->complete(i, std::move(response));
+            },
+            responseOptions[i]);
+    }
+    return collector->wait();
+}
+
 extern "C" {
     void* bergamot_service_new(size_t cache_size) {
-        BlockingService::Config config;
+        AsyncService::Config config;
+        config.numWorkers = ASYNC_WORKERS;
         config.cacheSize = cache_size;
         config.logger.level = "off";
-        return new BlockingService(config);
+        return new AsyncService(config);
     }
 
     void bergamot_service_delete(void* service_ptr) {
-        delete static_cast<BlockingService*>(service_ptr);
+        delete static_cast<AsyncService*>(service_ptr);
     }
 
     void* bergamot_model_new(const char* config_yaml) {
@@ -40,7 +118,7 @@ extern "C" {
         auto validate = true;
         auto pathsDir = "";
         auto options = parseOptionsFromString(cfg_str, validate, pathsDir);
-        return new TranslationModel(options);
+        return new TranslationModel(options, ASYNC_WORKERS);
     }
 
     void __attribute__ ((visibility ("default"))) bergamot_model_delete(void* model_ptr) {
@@ -48,7 +126,7 @@ extern "C" {
     }
 
     char** bergamot_service_translate(void* service_ptr, void* model_ptr, const char** inputs, size_t count, bool html) {
-        auto* service = static_cast<BlockingService*>(service_ptr);
+        auto* service = static_cast<AsyncService*>(service_ptr);
         auto* model = static_cast<TranslationModel*>(model_ptr);
 
         std::vector<std::string> cpp_inputs;
@@ -68,8 +146,7 @@ extern "C" {
             responseOptions.emplace_back(opts);
         }
 
-        std::shared_ptr<TranslationModel> model_shared(model, [](TranslationModel*){});
-        std::vector<Response> responses = service->translateMultiple(model_shared, std::move(cpp_inputs), responseOptions);
+        std::vector<Response> responses = translate_async(service, model, std::move(cpp_inputs), responseOptions);
 
         char** output = new char*[responses.size()];
         for (size_t i = 0; i < responses.size(); ++i) {
@@ -82,7 +159,7 @@ extern "C" {
     }
 
     char** bergamot_service_pivot(void* service_ptr, void* first_model_ptr, void* second_model_ptr, const char** inputs, size_t count, bool html) {
-        auto* service = static_cast<BlockingService*>(service_ptr);
+        auto* service = static_cast<AsyncService*>(service_ptr);
         auto* first_model = static_cast<TranslationModel*>(first_model_ptr);
         auto* second_model = static_cast<TranslationModel*>(second_model_ptr);
 
@@ -103,9 +180,7 @@ extern "C" {
             responseOptions.emplace_back(opts);
         }
 
-        std::shared_ptr<TranslationModel> first_shared(first_model, [](TranslationModel*){});
-        std::shared_ptr<TranslationModel> second_shared(second_model, [](TranslationModel*){});
-        std::vector<Response> responses = service->pivotMultiple(first_shared, second_shared, std::move(cpp_inputs), responseOptions);
+        std::vector<Response> responses = pivot_async(service, first_model, second_model, std::move(cpp_inputs), responseOptions);
 
         char** output = new char*[responses.size()];
         for (size_t i = 0; i < responses.size(); ++i) {
@@ -146,7 +221,7 @@ extern "C" {
 
     CTranslationWithAlignment* bergamot_service_translate_with_alignment(
             void* service_ptr, void* model_ptr, const char** inputs, size_t count) {
-        auto* service = static_cast<BlockingService*>(service_ptr);
+        auto* service = static_cast<AsyncService*>(service_ptr);
         auto* model = static_cast<TranslationModel*>(model_ptr);
 
         std::vector<std::string> cpp_inputs;
@@ -166,8 +241,7 @@ extern "C" {
             responseOptions.emplace_back(opts);
         }
 
-        std::shared_ptr<TranslationModel> model_shared(model, [](TranslationModel*){});
-        std::vector<Response> responses = service->translateMultiple(model_shared, std::move(cpp_inputs), responseOptions);
+        std::vector<Response> responses = translate_async(service, model, std::move(cpp_inputs), responseOptions);
 
         CTranslationWithAlignment* results = new CTranslationWithAlignment[count];
 
@@ -192,7 +266,7 @@ extern "C" {
 
     CTranslationWithAlignment* bergamot_service_pivot_with_alignment(
             void* service_ptr, void* first_model_ptr, void* second_model_ptr, const char** inputs, size_t count) {
-        auto* service = static_cast<BlockingService*>(service_ptr);
+        auto* service = static_cast<AsyncService*>(service_ptr);
         auto* first_model = static_cast<TranslationModel*>(first_model_ptr);
         auto* second_model = static_cast<TranslationModel*>(second_model_ptr);
 
@@ -213,9 +287,7 @@ extern "C" {
             responseOptions.emplace_back(opts);
         }
 
-        std::shared_ptr<TranslationModel> first_shared(first_model, [](TranslationModel*){});
-        std::shared_ptr<TranslationModel> second_shared(second_model, [](TranslationModel*){});
-        std::vector<Response> responses = service->pivotMultiple(first_shared, second_shared, std::move(cpp_inputs), responseOptions);
+        std::vector<Response> responses = pivot_async(service, first_model, second_model, std::move(cpp_inputs), responseOptions);
 
         CTranslationWithAlignment* results = new CTranslationWithAlignment[count];
 

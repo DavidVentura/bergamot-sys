@@ -1,6 +1,6 @@
 use cmake;
-use std::fs;
 use std::env;
+use std::fs;
 use std::path::PathBuf;
 
 fn latest_android_ndk_from_sdk() -> Option<PathBuf> {
@@ -83,8 +83,8 @@ fn main() {
                     .filter(|value| value.chars().all(|ch| ch.is_ascii_digit()))
             })
             .unwrap_or_else(|| "21".to_string());
-        let ndk_root =
-            android_ndk_root().expect("Android target requires ANDROID_NDK_ROOT or ANDROID_SDK_ROOT");
+        let ndk_root = android_ndk_root()
+            .expect("Android target requires ANDROID_NDK_ROOT or ANDROID_SDK_ROOT");
 
         config
             .generator("Ninja")
